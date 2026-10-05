@@ -24,7 +24,8 @@ import { DatabaseDiffSync } from '@/components/DatabaseDiffSync';
 import { DocumentationGuide } from '@/components/DocumentationGuide';
 import { LovableBridgeView } from '@/components/LovableBridgeView';
 import { VercelBridgeView } from '@/components/VercelBridgeView';
-import { AppLockGuard, DEFAULT_PASSWORD } from '@/components/AppLockGuard';
+import { AppLockGuard } from '@/components/AppLockGuard';
+import { DEFAULT_MASTER_PASSWORD } from '@/lib/accessCodeService';
 import { DEMO_PRESETS } from '@/lib/presets';
 import { DatabaseIntrospectionResult } from '@/types/supabase';
 import {
@@ -58,7 +59,7 @@ export default function MainPage() {
         body: JSON.stringify({
           supabaseUrl: data.projectInfo.url,
           supabaseKey: data.projectInfo.connectedVia === 'url_key' ? data.projectInfo.url : undefined,
-          masterPassword: typeof window !== 'undefined' ? localStorage.getItem('supasync_master_password') || DEFAULT_PASSWORD : DEFAULT_PASSWORD,
+          masterPassword: typeof window !== 'undefined' ? localStorage.getItem('supasync_master_password') || DEFAULT_MASTER_PASSWORD : DEFAULT_MASTER_PASSWORD,
         }),
       });
 
