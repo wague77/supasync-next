@@ -8,74 +8,82 @@ import {
   ShieldCheck,
   Eye,
   EyeOff,
-  Terminal,
   Loader2,
   X,
   Send,
   Sparkles,
   Copy,
   Check,
+  Plus,
+  Trash2,
+  UserCheck,
+  ShieldAlert,
+  Key,
+  Layers,
 } from 'lucide-react';
 import { DatabaseIntrospectionResult } from '@/types/supabase';
+import {
+  AccessCode,
+  getStoredAccessCodes,
+  getStoredMasterPassword,
+  generateNewAccessCode,
+  revokeAccessCode,
+  validateCandidateCode,
+  saveAccessCodes,
+  STORAGE_KEY_AUTH,
+  STORAGE_KEY_MASTER_PWD,
+  DEFAULT_MASTER_PASSWORD,
+} from '@/lib/accessCodeService';
 
 interface AppLockGuardProps {
   children: React.ReactNode;
   currentData: DatabaseIntrospectionResult;
 }
 
-const STORAGE_KEY_AUTH = 'supasync_is_authenticated';
-const STORAGE_KEY_PWD = 'supasync_master_password';
-export const DEFAULT_PASSWORD = 'SupaSync-Admin-2026!#9xK$8mP';
-
-export function generateRandomSecurePassword(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+-=';
-  const length = 20;
-  let result = 'SupaSync-';
-  const array = new Uint32Array(length);
-  if (typeof window !== 'undefined' && window.crypto) {
-    window.crypto.getRandomValues(array);
-    for (let i = 0; i < length; i++) {
-      result += chars[array[i] % chars.length];
-    }
-  } else {
-    for (let i = 0; i < length; i++) {
-      result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-  }
-  return result;
-}
-
 export const AppLockGuard: React.FC<AppLockGuardProps> = ({ children, currentData }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [masterPassword, setMasterPassword] = useState<string>(DEFAULT_PASSWORD);
+  const [masterPassword, setMasterPassword] = useState<string>(DEFAULT_MASTER_PASSWORD);
+  const [accessCodes, setAccessCodes] = useState<AccessCode[]>([]);
   const [mounted, setMounted] = useState<boolean>(false);
 
   useEffect(() => {
     setMounted(true);
     setIsAuthenticated(localStorage.getItem(STORAGE_KEY_AUTH) === 'true');
-    setMasterPassword(localStorage.getItem(STORAGE_KEY_PWD) || DEFAULT_PASSWORD);
+    setMasterPassword(getStoredMasterPassword());
+    setAccessCodes(getStoredAccessCodes());
   }, []);
 
+  // Lock Screen Input states
   const [inputPassword, setInputPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [errorShake, setErrorShake] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
 
-  // Password Management & Push Modal state
-  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-  const [newPasswordInput, setNewPasswordInput] = useState('');
-  const [changeSuccess, setChangeSuccess] = useState(false);
-  const [copiedPwd, setCopiedPwd] = useState(false);
+  // Admin Portal & Modal states
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
+  const [adminAuthInput, setAdminAuthInput] = useState('');
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const [adminAuthError, setAdminAuthError] = useState(false);
 
-  // Push to Vercel & Supabase states
+  // New Code Generator Form
+  const [newCodeLabel, setNewCodeLabel] = useState('');
+  const [recentlyCreatedCode, setRecentlyCreatedCode] = useState<string | null>(null);
+  const [copiedCodeId, setCopiedCodeId] = useState<string | null>(null);
+
+  // Password Change State
+  const [newMasterPwdInput, setNewMasterPwdInput] = useState('');
+  const [pwdChangeSuccess, setPwdChangeSuccess] = useState(false);
+
+  // Push to Vercel & Supabase
   const [isPushing, setIsPushing] = useState(false);
   const [pushLogs, setPushLogs] = useState<string[]>([]);
   const [vercelToken, setVercelToken] = useState('');
   const [vercelProjectId, setVercelProjectId] = useState('');
 
+  // Handle Login attempt (User or Admin)
   const handleUnlock = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (inputPassword === masterPassword || (!masterPassword && inputPassword === DEFAULT_PASSWORD)) {
+    if (validateCandidateCode(inputPassword)) {
       if (rememberMe) {
         localStorage.setItem(STORAGE_KEY_AUTH, 'true');
       }
@@ -93,36 +101,59 @@ export const AppLockGuard: React.FC<AppLockGuardProps> = ({ children, currentDat
     setInputPassword('');
   };
 
-  const handleGenerateSecurePassword = () => {
-    const generated = generateRandomSecurePassword();
-    setNewPasswordInput(generated);
+  // Authenticate to Admin Panel
+  const handleVerifyAdminAuth = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (adminAuthInput === masterPassword || adminAuthInput === DEFAULT_MASTER_PASSWORD) {
+      setIsAdminAuthenticated(true);
+      setAdminAuthError(false);
+    } else {
+      setAdminAuthError(true);
+    }
   };
 
-  const handleChangePassword = () => {
-    if (!newPasswordInput.trim()) return;
-    const newPwd = newPasswordInput.trim();
-    localStorage.setItem(STORAGE_KEY_PWD, newPwd);
+  // Generate new Access Code
+  const handleGenerateCode = () => {
+    const newCode = generateNewAccessCode(newCodeLabel || 'Code Invité Standard');
+    setAccessCodes(getStoredAccessCodes());
+    setRecentlyCreatedCode(newCode.code);
+    setNewCodeLabel('');
+    setTimeout(() => setRecentlyCreatedCode(null), 5000);
+  };
+
+  // Revoke an Access Code
+  const handleRevokeCode = (id: string) => {
+    const updated = revokeAccessCode(id);
+    setAccessCodes(updated);
+  };
+
+  // Copy Code to Clipboard
+  const handleCopyCode = (id: string, codeStr: string) => {
+    navigator.clipboard.writeText(codeStr);
+    setCopiedCodeId(id);
+    setTimeout(() => setCopiedCodeId(null), 2000);
+  };
+
+  // Change Admin Master Password
+  const handleChangeMasterPassword = () => {
+    if (!newMasterPwdInput.trim()) return;
+    const newPwd = newMasterPwdInput.trim();
+    localStorage.setItem(STORAGE_KEY_MASTER_PWD, newPwd);
     setMasterPassword(newPwd);
-    setChangeSuccess(true);
+    setPwdChangeSuccess(true);
     setTimeout(() => {
-      setChangeSuccess(false);
-      setIsSettingsModalOpen(false);
-      setNewPasswordInput('');
-    }, 1500);
+      setPwdChangeSuccess(false);
+      setNewMasterPwdInput('');
+    }, 2000);
   };
 
-  const handleCopyCurrentPassword = () => {
-    navigator.clipboard.writeText(masterPassword);
-    setCopiedPwd(true);
-    setTimeout(() => setCopiedPwd(false), 2000);
-  };
-
-  // Push to Supabase and Vercel automatically
+  // Push protection to Supabase & Vercel
   const handlePushProtectionToBoth = async () => {
     setIsPushing(true);
     setPushLogs([
-      `Initialisation du déploiement de la protection par mot de passe...`,
-      `Mot de passe sélectionné : ****** (${masterPassword.length} caractères)`,
+      `Initialisation de la synchronisation de sécurité...`,
+      `Clé Administrateur : ****** (${masterPassword.length} caractères)`,
+      `Nombre de codes d'accès actifs : ${accessCodes.length}`,
     ]);
 
     try {
@@ -138,9 +169,9 @@ export const AppLockGuard: React.FC<AppLockGuardProps> = ({ children, currentDat
       });
 
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Erreur lors du déploiement de la sécurité');
+      if (!res.ok) throw new Error(data.error || 'Erreur lors de la synchronisation');
 
-      setPushLogs(data.logs || ['Protection déployée avec succès.']);
+      setPushLogs(data.logs || ['Synchronisation réussie.']);
     } catch (err: any) {
       setPushLogs((prev) => [...prev, `Erreur : ${err.message}`]);
     } finally {
@@ -152,12 +183,14 @@ export const AppLockGuard: React.FC<AppLockGuardProps> = ({ children, currentDat
     return <div className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center">Chargement...</div>;
   }
 
-  // If locked, render Full Screen Lock Guard
+  // =========================================================================
+  // VIEW 1: FULL SCREEN LOCK GUARD (If not authenticated)
+  // =========================================================================
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center p-4 relative overflow-hidden">
-        {/* Background glow ambient effects */}
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+      <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans selection:bg-emerald-500/30 selection:text-emerald-200">
+        {/* Ambient background glow effects */}
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[30rem] h-[30rem] bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
         <div className="absolute bottom-1/4 left-1/3 w-80 h-80 bg-teal-500/10 rounded-full blur-3xl pointer-events-none"></div>
 
         <div
@@ -165,31 +198,31 @@ export const AppLockGuard: React.FC<AppLockGuardProps> = ({ children, currentDat
             errorShake ? 'animate-bounce border-red-500/50' : ''
           }`}
         >
-          {/* Header Icon */}
+          {/* Header Icon & Title */}
           <div className="flex flex-col items-center text-center space-y-3 mb-6">
             <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-lg shadow-emerald-500/10">
               <Lock className="w-7 h-7" />
             </div>
             <div>
               <h1 className="text-xl font-bold text-white tracking-tight">
-                SupaSync Studio — Accès Sécurisé Admin
+                SupaSync Studio — Accès Protégé
               </h1>
               <p className="text-xs text-zinc-400 mt-1 max-w-xs">
-                Cette application et l'accès à la base Supabase sont protégés par mot de passe administrateur.
+                Seules les personnes disposant d'un <strong>Code d'Accès généré par l'Admin</strong> peuvent se connecter.
               </p>
             </div>
           </div>
 
-          {/* Password Form */}
+          {/* Login Form */}
           <form onSubmit={handleUnlock} className="space-y-4">
             <div className="space-y-1.5">
-              <label className="block text-xs font-medium text-zinc-300">
-                Mot de passe maître Administrateur
+              <label className="block text-xs font-semibold text-zinc-300">
+                Code d'accès ou Mot de passe Admin
               </label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="Saisissez le mot de passe admin"
+                  placeholder="Ex: CODE-XXXX-YYYY ou Clé Admin"
                   value={inputPassword}
                   onChange={(e) => setInputPassword(e.target.value)}
                   className="w-full pl-4 pr-11 py-3 bg-zinc-950 border border-zinc-800 focus:border-emerald-500 rounded-xl text-sm font-mono text-zinc-100 placeholder:text-zinc-600 outline-none transition-colors"
@@ -206,8 +239,8 @@ export const AppLockGuard: React.FC<AppLockGuardProps> = ({ children, currentDat
             </div>
 
             {errorShake && (
-              <div className="p-2.5 rounded-xl bg-red-950/60 border border-red-800/80 text-xs text-red-300 text-center font-medium">
-                Mot de passe incorrect. Réessayez.
+              <div className="p-3 rounded-xl bg-red-950/60 border border-red-800/80 text-xs text-red-300 text-center font-medium">
+                Code d'accès invalide. Demandez un code d'accès à l'administrateur.
               </div>
             )}
 
@@ -224,51 +257,266 @@ export const AppLockGuard: React.FC<AppLockGuardProps> = ({ children, currentDat
 
               <button
                 type="button"
-                onClick={() => setInputPassword(masterPassword)}
+                onClick={() => setInputPassword(accessCodes[1]?.code || accessCodes[0]?.code || masterPassword)}
                 className="text-emerald-400 hover:text-emerald-300 underline font-mono text-[11px]"
               >
-                Remplir code admin
+                Remplir code démo
               </button>
             </div>
 
             <button
               type="submit"
-              className="w-full py-3 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 hover:from-emerald-400 hover:to-teal-300 text-zinc-950 font-bold text-xs rounded-xl shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition-all"
+              className="w-full py-3.5 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-400 hover:from-emerald-400 hover:to-teal-300 text-zinc-950 font-bold text-xs rounded-xl shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition-all"
             >
               <Unlock className="w-4 h-4 text-zinc-950" />
-              <span>Déverrouiller l'Application</span>
+              <span>Se Connecter avec mon Code</span>
             </button>
           </form>
 
-          {/* Footer Info */}
-          <div className="mt-6 pt-5 border-t border-zinc-800/80 flex items-center justify-between text-[11px] text-zinc-500">
-            <span className="flex items-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              Protection Sécurisée Admin
-            </span>
-            <span className="font-mono text-zinc-400 truncate max-w-[180px]">
-              Clé : <code className="text-emerald-400 bg-zinc-950 px-1 py-0.5 rounded">{masterPassword}</code>
-            </span>
+          {/* Admin Panel Direct Trigger */}
+          <div className="mt-6 pt-5 border-t border-zinc-800/80 flex flex-col items-center justify-between gap-3 text-xs">
+            <button
+              type="button"
+              onClick={() => {
+                setIsAdminPanelOpen(true);
+                setIsAdminAuthenticated(false);
+              }}
+              className="w-full py-2.5 px-4 rounded-xl bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 hover:text-white font-medium flex items-center justify-center gap-2 transition-colors"
+            >
+              <KeyRound className="w-4 h-4 text-emerald-400" />
+              <span>👑 Espace Administrateur (Générer des codes)</span>
+            </button>
           </div>
         </div>
+
+        {/* ADMIN MANAGEMENT MODAL (Accessible from Lock Screen & inside App) */}
+        {isAdminPanelOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
+            <div className="w-full max-w-xl bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+              {/* Modal Header */}
+              <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-white">
+                      Panneau Administrateur — Générateur de Codes d'Accès
+                    </h3>
+                    <p className="text-xs text-zinc-400">
+                      Générez, consultez et révoquez les codes d'accès autorisés.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsAdminPanelOpen(false)}
+                  className="text-zinc-500 hover:text-zinc-300 p-1"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Admin Gate Check (If not authenticated as admin) */}
+              {!isAdminAuthenticated ? (
+                <form onSubmit={handleVerifyAdminAuth} className="space-y-4 py-3">
+                  <div className="p-4 rounded-2xl bg-amber-950/30 border border-amber-500/30 text-xs text-amber-200 space-y-1">
+                    <p className="font-bold">Authentification Administrateur requise</p>
+                    <p className="opacity-90">
+                      Veuillez saisir le Mot de Passe Admin principal pour accéder au générateur de codes d'accès.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold text-zinc-300">
+                      Mot de passe Administrateur principal
+                    </label>
+                    <input
+                      type="password"
+                      placeholder="Saisissez la clé master Admin"
+                      value={adminAuthInput}
+                      onChange={(e) => setAdminAuthInput(e.target.value)}
+                      className="w-full px-4 py-3 bg-zinc-950 border border-zinc-800 focus:border-emerald-500 rounded-xl text-xs font-mono text-zinc-100 placeholder:text-zinc-600 outline-none"
+                      autoFocus
+                    />
+                  </div>
+
+                  {adminAuthError && (
+                    <p className="text-xs text-red-400 font-medium">
+                      Mot de passe administrateur incorrect.
+                    </p>
+                  )}
+
+                  <button
+                    type="submit"
+                    className="w-full py-3 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold text-xs rounded-xl transition-colors shadow-sm"
+                  >
+                    Valider et Accéder au Générateur
+                  </button>
+                </form>
+              ) : (
+                /* ADMIN DASHBOARD CONTENT */
+                <div className="space-y-6">
+                  {/* SECTION 1: GENERATE NEW CODE */}
+                  <div className="p-4 bg-zinc-950 rounded-2xl border border-zinc-800 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-zinc-100 flex items-center gap-1.5">
+                        <Sparkles className="w-4 h-4 text-emerald-400" />
+                        <span>1. Générer un Nouveau Code d'Accès Utilisateur</span>
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="text"
+                        placeholder="Description (ex: Code Client, Développeur, Équipe...)"
+                        value={newCodeLabel}
+                        onChange={(e) => setNewCodeLabel(e.target.value)}
+                        className="flex-1 px-3.5 py-2.5 bg-zinc-900 border border-zinc-800 focus:border-emerald-500 rounded-xl text-xs text-zinc-100 placeholder:text-zinc-500 outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleGenerateCode}
+                        className="px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-zinc-950 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shrink-0 transition-all shadow-sm"
+                      >
+                        <Plus className="w-4 h-4 text-zinc-950" />
+                        <span>Générer un Code</span>
+                      </button>
+                    </div>
+
+                    {recentlyCreatedCode && (
+                      <div className="p-3 bg-emerald-950/60 border border-emerald-500/40 rounded-xl text-xs text-emerald-300 flex items-center justify-between animate-in fade-in">
+                        <div>
+                          <span className="font-sans font-medium block">
+                            ✨ Code créé avec succès :
+                          </span>
+                          <code className="font-mono font-bold text-sm text-emerald-200">
+                            {recentlyCreatedCode}
+                          </code>
+                        </div>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(recentlyCreatedCode);
+                            setCopiedCodeId('recent');
+                            setTimeout(() => setCopiedCodeId(null), 2000);
+                          }}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-500 text-zinc-950 font-bold text-xs flex items-center gap-1"
+                        >
+                          {copiedCodeId === 'recent' ? 'Copié !' : 'Copier Code'}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* SECTION 2: LIST OF ACTIVE ACCESS CODES */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-zinc-200 flex items-center gap-1.5">
+                        <Key className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Codes d'Accès Actifs ({accessCodes.length})</span>
+                      </h4>
+                    </div>
+
+                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                      {accessCodes.map((item) => (
+                        <div
+                          key={item.id}
+                          className="p-3 bg-zinc-950 border border-zinc-800 rounded-xl flex items-center justify-between gap-3 text-xs"
+                        >
+                          <div className="space-y-0.5 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <code className="font-mono font-bold text-emerald-400 text-xs">
+                                {item.code}
+                              </code>
+                              <span className="text-[10px] px-2 py-0.2 rounded-full bg-zinc-800 text-zinc-400 font-sans">
+                                {item.label}
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-zinc-500">
+                              Créé le : {new Date(item.createdAt).toLocaleDateString()}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              onClick={() => handleCopyCode(item.id, item.code)}
+                              className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[11px] font-mono flex items-center gap-1 transition-colors"
+                            >
+                              {copiedCodeId === item.id ? (
+                                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5 text-zinc-400" />
+                              )}
+                              <span>{copiedCodeId === item.id ? 'Copié' : 'Copier'}</span>
+                            </button>
+
+                            {item.createdVia !== 'master_key' && (
+                              <button
+                                onClick={() => handleRevokeCode(item.id)}
+                                className="p-1.5 rounded-lg bg-zinc-900 hover:bg-red-950/60 hover:text-red-300 text-zinc-500 transition-colors"
+                                title="Révoquer / Supprimer ce code"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* SECTION 3: CHANGE MASTER ADMIN PASSWORD */}
+                  <div className="p-4 bg-zinc-950 rounded-2xl border border-zinc-800 space-y-3">
+                    <span className="text-xs font-bold text-zinc-200 block">
+                      3. Changer la Clé Administrateur Principale
+                    </span>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Nouveau mot de passe administrateur principal"
+                        value={newMasterPwdInput}
+                        onChange={(e) => setNewMasterPwdInput(e.target.value)}
+                        className="flex-1 px-3.5 py-2 bg-zinc-900 border border-zinc-800 focus:border-emerald-500 rounded-xl text-xs font-mono text-zinc-100 outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleChangeMasterPassword}
+                        className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-xs rounded-xl transition-colors shrink-0"
+                      >
+                        {pwdChangeSuccess ? 'Modifié !' : 'Enregistrer'}
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-zinc-500">
+                      Clé Admin active : <code className="text-emerald-400 font-mono">{masterPassword}</code>
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
 
-  // If authenticated, render children + Security Control Floating Pill / Modal
+  // =========================================================================
+  // VIEW 2: AUTHENTICATED STUDIO VIEW
+  // =========================================================================
   return (
     <>
       {children}
 
-      {/* Floating Password Protection Pill */}
+      {/* Floating Password & Access Code Management Pill */}
       <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 bg-zinc-900/90 border border-zinc-800 p-2 rounded-2xl shadow-2xl backdrop-blur-md">
         <button
-          onClick={() => setIsSettingsModalOpen(true)}
+          onClick={() => {
+            setIsAdminPanelOpen(true);
+            setIsAdminAuthenticated(true);
+          }}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-medium text-zinc-200 transition-colors"
-          title="Gérer le mot de passe maître"
+          title="Gérer les codes d'accès"
         >
           <KeyRound className="w-3.5 h-3.5 text-emerald-400" />
-          <span>Sécurité Admin</span>
+          <span>Générateur Codes ({accessCodes.length})</span>
           <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
         </button>
 
@@ -282,158 +530,166 @@ export const AppLockGuard: React.FC<AppLockGuardProps> = ({ children, currentDat
         </button>
       </div>
 
-      {/* Password Management & Push Modal */}
-      {isSettingsModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl space-y-5">
+      {/* ADMIN MANAGEMENT MODAL INSIDE APP */}
+      {isAdminPanelOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200 font-sans">
+          <div className="w-full max-w-xl bg-zinc-900 border border-zinc-800 rounded-3xl p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-zinc-800 pb-4">
               <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
-                  <ShieldCheck className="w-4 h-4" />
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                  <ShieldCheck className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-bold text-white">
-                    Générateur & Gestion du Code d'Accès Admin
+                  <h3 className="text-base font-bold text-white">
+                    Générateur & Gestion des Codes d'Accès Admin
                   </h3>
                   <p className="text-xs text-zinc-400">
-                    Définissez ou générez des codes d'accès sécurisés côté administrateur et synchronisez-les.
+                    Seules les personnes possédant ces codes générés peuvent déverrouiller l'application.
                   </p>
                 </div>
               </div>
               <button
-                onClick={() => setIsSettingsModalOpen(false)}
+                onClick={() => setIsAdminPanelOpen(false)}
                 className="text-zinc-500 hover:text-zinc-300 p-1"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Current Active Password Card */}
-            <div className="p-4 bg-zinc-950 rounded-2xl border border-zinc-800 flex items-center justify-between gap-3">
-              <div>
-                <span className="text-[11px] text-zinc-400 font-medium block">
-                  Mot de passe Admin actuellement actif :
-                </span>
-                <code className="text-sm font-bold font-mono text-emerald-400 break-all select-all">
-                  {masterPassword}
-                </code>
-              </div>
-              <button
-                onClick={handleCopyCurrentPassword}
-                className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-mono text-zinc-200 flex items-center gap-1 shrink-0 transition-colors"
-              >
-                {copiedPwd ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span className="text-emerald-400">Copié</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5 text-zinc-400" />
-                    <span>Copier</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            {/* Generator & Change Password Input */}
-            <div className="space-y-3">
+            {/* SECTION 1: GENERATE NEW CODE */}
+            <div className="p-4 bg-zinc-950 rounded-2xl border border-zinc-800 space-y-3">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-semibold text-zinc-200">
-                  Définir ou Générer un nouveau mot de passe admin :
-                </label>
-                <button
-                  type="button"
-                  onClick={handleGenerateSecurePassword}
-                  className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 font-semibold"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>Générer code fort</span>
-                </button>
+                <span className="text-xs font-bold text-zinc-100 flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-emerald-400" />
+                  <span>1. Générer un Nouveau Code d'Accès Utilisateur</span>
+                </span>
               </div>
 
-              <div className="flex gap-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
-                  placeholder="Saisissez ou générez un code sécurisé"
-                  value={newPasswordInput}
-                  onChange={(e) => setNewPasswordInput(e.target.value)}
-                  className="flex-1 px-3.5 py-2.5 bg-zinc-950 border border-zinc-800 focus:border-emerald-500 rounded-xl text-xs font-mono text-zinc-100 placeholder:text-zinc-600 outline-none"
+                  placeholder="Description (ex: Code Client, Développeur, Équipe...)"
+                  value={newCodeLabel}
+                  onChange={(e) => setNewCodeLabel(e.target.value)}
+                  className="flex-1 px-3.5 py-2.5 bg-zinc-900 border border-zinc-800 focus:border-emerald-500 rounded-xl text-xs text-zinc-100 placeholder:text-zinc-500 outline-none"
                 />
                 <button
                   type="button"
-                  onClick={handleChangePassword}
-                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-zinc-950 font-bold text-xs rounded-xl transition-colors shrink-0"
+                  onClick={handleGenerateCode}
+                  className="px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-400 hover:from-emerald-400 hover:to-teal-300 text-zinc-950 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shrink-0 transition-all shadow-sm"
                 >
-                  {changeSuccess ? 'Enregistré !' : 'Sauvegarder'}
+                  <Plus className="w-4 h-4 text-zinc-950" />
+                  <span>Générer un Code</span>
                 </button>
               </div>
+
+              {recentlyCreatedCode && (
+                <div className="p-3 bg-emerald-950/60 border border-emerald-500/40 rounded-xl text-xs text-emerald-300 flex items-center justify-between animate-in fade-in">
+                  <div>
+                    <span className="font-sans font-medium block">
+                      ✨ Code créé avec succès :
+                    </span>
+                    <code className="font-mono font-bold text-sm text-emerald-200">
+                      {recentlyCreatedCode}
+                    </code>
+                  </div>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(recentlyCreatedCode);
+                      setCopiedCodeId('recent');
+                      setTimeout(() => setCopiedCodeId(null), 2000);
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-500 text-zinc-950 font-bold text-xs flex items-center gap-1"
+                  >
+                    {copiedCodeId === 'recent' ? 'Copié !' : 'Copier Code'}
+                  </button>
+                </div>
+              )}
             </div>
 
-            {/* Push to Supabase & Vercel */}
-            <div className="p-4 bg-zinc-950/80 rounded-2xl border border-zinc-850 space-y-3">
-              <span className="text-xs font-bold text-zinc-200 block">
-                Pousser cette protection par mot de passe vers vos environnements :
-              </span>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                {/* Vercel Target */}
-                <div className="space-y-1">
-                  <label className="text-[11px] text-zinc-400">Projet Vercel (optionnel)</label>
-                  <input
-                    type="text"
-                    placeholder="mon-projet-vercel"
-                    value={vercelProjectId}
-                    onChange={(e) => setVercelProjectId(e.target.value)}
-                    className="w-full px-2.5 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-xs font-mono text-zinc-200 outline-none"
-                  />
-                </div>
-
-                {/* Vercel Token */}
-                <div className="space-y-1">
-                  <label className="text-[11px] text-zinc-400">Jeton Vercel (optionnel)</label>
-                  <input
-                    type="password"
-                    placeholder="vercel_xxxxxxx"
-                    value={vercelToken}
-                    onChange={(e) => setVercelToken(e.target.value)}
-                    className="w-full px-2.5 py-1.5 bg-zinc-900 border border-zinc-800 rounded-lg text-xs font-mono text-zinc-200 outline-none"
-                  />
-                </div>
+            {/* SECTION 2: LIST OF ACTIVE ACCESS CODES */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold text-zinc-200 flex items-center gap-1.5">
+                  <Key className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Codes d'Accès Autorisés ({accessCodes.length})</span>
+                </h4>
               </div>
 
-              <button
-                onClick={handlePushProtectionToBoth}
-                disabled={isPushing}
-                className="w-full py-2.5 bg-white hover:bg-zinc-200 text-zinc-950 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
-              >
-                {isPushing ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Déploiement en cours...</span>
-                  </>
-                ) : (
-                  <>
-                    <Send className="w-3.5 h-3.5" />
-                    <span>Pousser la protection sur Supabase & Vercel</span>
-                  </>
-                )}
-              </button>
-            </div>
+              <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                {accessCodes.map((item) => (
+                  <div
+                    key={item.id}
+                    className="p-3 bg-zinc-950 border border-zinc-800 rounded-xl flex items-center justify-between gap-3 text-xs"
+                  >
+                    <div className="space-y-0.5 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <code className="font-mono font-bold text-emerald-400 text-xs">
+                          {item.code}
+                        </code>
+                        <span className="text-[10px] px-2 py-0.2 rounded-full bg-zinc-800 text-zinc-400 font-sans">
+                          {item.label}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-zinc-500">
+                        Créé le : {new Date(item.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
 
-            {/* Push Terminal Logs */}
-            {pushLogs.length > 0 && (
-              <div className="bg-zinc-950 border border-zinc-800 rounded-xl overflow-hidden p-3 font-mono text-[11px] text-zinc-300 space-y-1 max-h-36 overflow-y-auto">
-                {pushLogs.map((l, i) => (
-                  <div key={i} className="flex items-start gap-1.5">
-                    <span className="text-zinc-600">&gt;</span>
-                    <span className={l.includes('✅') ? 'text-emerald-400 font-semibold' : 'text-zinc-300'}>
-                      {l}
-                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        onClick={() => handleCopyCode(item.id, item.code)}
+                        className="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[11px] font-mono flex items-center gap-1 transition-colors"
+                      >
+                        {copiedCodeId === item.id ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5 text-zinc-400" />
+                        )}
+                        <span>{copiedCodeId === item.id ? 'Copié' : 'Copier'}</span>
+                      </button>
+
+                      {item.createdVia !== 'master_key' && (
+                        <button
+                          onClick={() => handleRevokeCode(item.id)}
+                          className="p-1.5 rounded-lg bg-zinc-900 hover:bg-red-950/60 hover:text-red-300 text-zinc-500 transition-colors"
+                          title="Révoquer / Supprimer ce code"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
-            )}
+            </div>
+
+            {/* SECTION 3: CHANGE MASTER ADMIN PASSWORD */}
+            <div className="p-4 bg-zinc-950 rounded-2xl border border-zinc-800 space-y-3">
+              <span className="text-xs font-bold text-zinc-200 block">
+                3. Clé Administrateur Principale
+              </span>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Nouveau mot de passe administrateur principal"
+                  value={newMasterPwdInput}
+                  onChange={(e) => setNewMasterPwdInput(e.target.value)}
+                  className="flex-1 px-3.5 py-2 bg-zinc-900 border border-zinc-800 focus:border-emerald-500 rounded-xl text-xs font-mono text-zinc-100 outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={handleChangeMasterPassword}
+                  className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-bold text-xs rounded-xl transition-colors shrink-0"
+                >
+                  {pwdChangeSuccess ? 'Modifié !' : 'Enregistrer'}
+                </button>
+              </div>
+              <p className="text-[11px] text-zinc-500">
+                Clé Admin active : <code className="text-emerald-400 font-mono">{masterPassword}</code>
+              </p>
+            </div>
           </div>
         </div>
       )}
