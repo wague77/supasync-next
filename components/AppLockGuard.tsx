@@ -254,14 +254,6 @@ export const AppLockGuard: React.FC<AppLockGuardProps> = ({ children, currentDat
                 />
                 <span>Mémoriser la session</span>
               </label>
-
-              <button
-                type="button"
-                onClick={() => setInputPassword(accessCodes[1]?.code || accessCodes[0]?.code || masterPassword)}
-                className="text-emerald-400 hover:text-emerald-300 underline font-mono text-[11px]"
-              >
-                Remplir code démo
-              </button>
             </div>
 
             <button

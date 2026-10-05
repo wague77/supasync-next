@@ -31,13 +31,6 @@ export function getStoredAccessCodes(): AccessCode[] {
           createdAt: new Date().toISOString(),
           createdVia: 'master_key',
         },
-        {
-          id: 'code-demo-user',
-          code: 'CODE-SUPASYNC-2026',
-          label: 'Code d\'accès Utilisateur Standard',
-          createdAt: new Date().toISOString(),
-          createdVia: 'admin_generator',
-        },
       ];
       localStorage.setItem(STORAGE_KEY_ACCESS_CODES, JSON.stringify(defaultCodes));
       return defaultCodes;
