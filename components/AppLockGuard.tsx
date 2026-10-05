@@ -8,15 +8,13 @@ import {
   ShieldCheck,
   Eye,
   EyeOff,
-  CheckCircle2,
-  AlertCircle,
-  Database,
-  Triangle,
-  ArrowRight,
   Terminal,
   Loader2,
   X,
   Send,
+  Sparkles,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { DatabaseIntrospectionResult } from '@/types/supabase';
 
@@ -27,7 +25,25 @@ interface AppLockGuardProps {
 
 const STORAGE_KEY_AUTH = 'supasync_is_authenticated';
 const STORAGE_KEY_PWD = 'supasync_master_password';
-const DEFAULT_PASSWORD = 'admin';
+export const DEFAULT_PASSWORD = 'SupaSync-Admin-2026!#9xK$8mP';
+
+export function generateRandomSecurePassword(): string {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()_+-=';
+  const length = 20;
+  let result = 'SupaSync-';
+  const array = new Uint32Array(length);
+  if (typeof window !== 'undefined' && window.crypto) {
+    window.crypto.getRandomValues(array);
+    for (let i = 0; i < length; i++) {
+      result += chars[array[i] % chars.length];
+    }
+  } else {
+    for (let i = 0; i < length; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+  }
+  return result;
+}
 
 export const AppLockGuard: React.FC<AppLockGuardProps> = ({ children, currentData }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -49,11 +65,11 @@ export const AppLockGuard: React.FC<AppLockGuardProps> = ({ children, currentDat
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [newPasswordInput, setNewPasswordInput] = useState('');
   const [changeSuccess, setChangeSuccess] = useState(false);
+  const [copiedPwd, setCopiedPwd] = useState(false);
 
   // Push to Vercel & Supabase states
   const [isPushing, setIsPushing] = useState(false);
   const [pushLogs, setPushLogs] = useState<string[]>([]);
-  const [pushSuccess, setPushSuccess] = useState(false);
   const [vercelToken, setVercelToken] = useState('');
   const [vercelProjectId, setVercelProjectId] = useState('');
 
@@ -77,6 +93,11 @@ export const AppLockGuard: React.FC<AppLockGuardProps> = ({ children, currentDat
     setInputPassword('');
   };
 
+  const handleGenerateSecurePassword = () => {
+    const generated = generateRandomSecurePassword();
+    setNewPasswordInput(generated);
+  };
+
   const handleChangePassword = () => {
     if (!newPasswordInput.trim()) return;
     const newPwd = newPasswordInput.trim();
@@ -90,6 +111,12 @@ export const AppLockGuard: React.FC<AppLockGuardProps> = ({ children, currentDat
     }, 1500);
   };
 
+  const handleCopyCurrentPassword = () => {
+    navigator.clipboard.writeText(masterPassword);
+    setCopiedPwd(true);
+    setTimeout(() => setCopiedPwd(false), 2000);
+  };
+
   // Push to Supabase and Vercel automatically
   const handlePushProtectionToBoth = async () => {
     setIsPushing(true);
@@ -97,7 +124,6 @@ export const AppLockGuard: React.FC<AppLockGuardProps> = ({ children, currentDat
       `Initialisation du déploiement de la protection par mot de passe...`,
       `Mot de passe sélectionné : ****** (${masterPassword.length} caractères)`,
     ]);
-    setPushSuccess(false);
 
     try {
       const res = await fetch('/api/security/push-password', {
@@ -115,7 +141,6 @@ export const AppLockGuard: React.FC<AppLockGuardProps> = ({ children, currentDat
       if (!res.ok) throw new Error(data.error || 'Erreur lors du déploiement de la sécurité');
 
       setPushLogs(data.logs || ['Protection déployée avec succès.']);
-      setPushSuccess(true);
     } catch (err: any) {
       setPushLogs((prev) => [...prev, `Erreur : ${err.message}`]);
     } finally {
@@ -147,10 +172,10 @@ export const AppLockGuard: React.FC<AppLockGuardProps> = ({ children, currentDat
             </div>
             <div>
               <h1 className="text-xl font-bold text-white tracking-tight">
-                SupaSync Studio — Accès Sécurisé
+                SupaSync Studio — Accès Sécurisé Admin
               </h1>
               <p className="text-xs text-zinc-400 mt-1 max-w-xs">
-                Cette application et l'accès à la base Supabase sont protégés par mot de passe.
+                Cette application et l'accès à la base Supabase sont protégés par mot de passe administrateur.
               </p>
             </div>
           </div>
@@ -159,12 +184,12 @@ export const AppLockGuard: React.FC<AppLockGuardProps> = ({ children, currentDat
           <form onSubmit={handleUnlock} className="space-y-4">
             <div className="space-y-1.5">
               <label className="block text-xs font-medium text-zinc-300">
-                Mot de passe maître
+                Mot de passe maître Administrateur
               </label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
-                  placeholder="Saisissez le mot de passe"
+                  placeholder="Saisissez le mot de passe admin"
                   value={inputPassword}
                   onChange={(e) => setInputPassword(e.target.value)}
                   className="w-full pl-4 pr-11 py-3 bg-zinc-950 border border-zinc-800 focus:border-emerald-500 rounded-xl text-sm font-mono text-zinc-100 placeholder:text-zinc-600 outline-none transition-colors"
@@ -202,7 +227,7 @@ export const AppLockGuard: React.FC<AppLockGuardProps> = ({ children, currentDat
                 onClick={() => setInputPassword(masterPassword)}
                 className="text-emerald-400 hover:text-emerald-300 underline font-mono text-[11px]"
               >
-                Remplir mot de passe par défaut
+                Remplir code admin
               </button>
             </div>
 
@@ -219,10 +244,10 @@ export const AppLockGuard: React.FC<AppLockGuardProps> = ({ children, currentDat
           <div className="mt-6 pt-5 border-t border-zinc-800/80 flex items-center justify-between text-[11px] text-zinc-500">
             <span className="flex items-center gap-1.5">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              Protection Supabase & Vercel
+              Protection Sécurisée Admin
             </span>
-            <span className="font-mono text-zinc-400">
-              Défaut : <code className="text-emerald-400 bg-zinc-950 px-1 py-0.5 rounded">admin</code>
+            <span className="font-mono text-zinc-400 truncate max-w-[180px]">
+              Clé : <code className="text-emerald-400 bg-zinc-950 px-1 py-0.5 rounded">{masterPassword}</code>
             </span>
           </div>
         </div>
@@ -243,7 +268,7 @@ export const AppLockGuard: React.FC<AppLockGuardProps> = ({ children, currentDat
           title="Gérer le mot de passe maître"
         >
           <KeyRound className="w-3.5 h-3.5 text-emerald-400" />
-          <span>Sécurité</span>
+          <span>Sécurité Admin</span>
           <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
         </button>
 
@@ -268,10 +293,10 @@ export const AppLockGuard: React.FC<AppLockGuardProps> = ({ children, currentDat
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-white">
-                    Protection par Mot de Passe (Supabase & Vercel)
+                    Générateur & Gestion du Code d'Accès Admin
                   </h3>
                   <p className="text-xs text-zinc-400">
-                    Modifiez le mot de passe maître et poussez la protection directement sur vos plateformes.
+                    Définissez ou générez des codes d'accès sécurisés côté administrateur et synchronisez-les.
                   </p>
                 </div>
               </div>
@@ -283,15 +308,54 @@ export const AppLockGuard: React.FC<AppLockGuardProps> = ({ children, currentDat
               </button>
             </div>
 
-            {/* Change Password Input */}
+            {/* Current Active Password Card */}
+            <div className="p-4 bg-zinc-950 rounded-2xl border border-zinc-800 flex items-center justify-between gap-3">
+              <div>
+                <span className="text-[11px] text-zinc-400 font-medium block">
+                  Mot de passe Admin actuellement actif :
+                </span>
+                <code className="text-sm font-bold font-mono text-emerald-400 break-all select-all">
+                  {masterPassword}
+                </code>
+              </div>
+              <button
+                onClick={handleCopyCurrentPassword}
+                className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs font-mono text-zinc-200 flex items-center gap-1 shrink-0 transition-colors"
+              >
+                {copiedPwd ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="text-emerald-400">Copié</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5 text-zinc-400" />
+                    <span>Copier</span>
+                  </>
+                )}
+              </button>
+            </div>
+
+            {/* Generator & Change Password Input */}
             <div className="space-y-3">
-              <label className="block text-xs font-semibold text-zinc-200">
-                Nouveau mot de passe maître :
-              </label>
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-zinc-200">
+                  Définir ou Générer un nouveau mot de passe admin :
+                </label>
+                <button
+                  type="button"
+                  onClick={handleGenerateSecurePassword}
+                  className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 font-semibold"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>Générer code fort</span>
+                </button>
+              </div>
+
               <div className="flex gap-2">
                 <input
                   type="text"
-                  placeholder="Définir un nouveau mot de passe"
+                  placeholder="Saisissez ou générez un code sécurisé"
                   value={newPasswordInput}
                   onChange={(e) => setNewPasswordInput(e.target.value)}
                   className="flex-1 px-3.5 py-2.5 bg-zinc-950 border border-zinc-800 focus:border-emerald-500 rounded-xl text-xs font-mono text-zinc-100 placeholder:text-zinc-600 outline-none"
@@ -304,9 +368,6 @@ export const AppLockGuard: React.FC<AppLockGuardProps> = ({ children, currentDat
                   {changeSuccess ? 'Enregistré !' : 'Sauvegarder'}
                 </button>
               </div>
-              <p className="text-[11px] text-zinc-500">
-                Mot de passe actuellement actif : <code className="text-emerald-400 font-mono">{masterPassword}</code>
-              </p>
             </div>
 
             {/* Push to Supabase & Vercel */}
